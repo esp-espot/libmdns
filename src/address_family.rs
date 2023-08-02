@@ -1,4 +1,5 @@
 use super::MDNS_PORT;
+#[cfg(feature = "if-addrs")]
 use if_addrs::get_if_addrs;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::io;
@@ -18,13 +19,13 @@ pub trait AddressFamily {
 
     const DOMAIN: Domain;
 
-    fn join_multicast(socket: &Socket, multiaddr: &Self::Addr) -> io::Result<()>;
+    fn join_multicast(socket: &Socket, multiaddr: &Self::Addr, #[cfg(not(feature = "if-addrs"))] self_ip: Option<Self::Addr>) -> io::Result<()>;
 
     fn udp_socket() -> io::Result<Socket> {
         Socket::new(Self::DOMAIN, Type::DGRAM, Some(Protocol::UDP))
     }
 
-    fn bind() -> io::Result<UdpSocket> {
+    fn bind(#[cfg(not(feature = "if-addrs"))] self_ip: Option<Self::Addr>) -> io::Result<UdpSocket> {
         let addr: SockAddr = SocketAddr::new(Self::ANY_ADDR.into(), MDNS_PORT).into();
         let socket = Self::udp_socket()?;
         socket.set_reuse_address(true)?;
@@ -35,6 +36,9 @@ pub trait AddressFamily {
         socket.set_reuse_port(true)?;
 
         socket.bind(&addr)?;
+        #[cfg(not(feature = "if-addrs"))]
+        Self::join_multicast(&socket, &Self::MDNS_GROUP, self_ip)?;
+        #[cfg(feature = "if-addrs")]
         Self::join_multicast(&socket, &Self::MDNS_GROUP)?;
         Ok(socket.into())
     }
@@ -48,8 +52,11 @@ impl AddressFamily for Inet {
 
     const DOMAIN: Domain = Domain::IPV4;
 
-    fn join_multicast(socket: &Socket, multiaddr: &Self::Addr) -> io::Result<()> {
+    fn join_multicast(socket: &Socket, multiaddr: &Self::Addr, #[cfg(not(feature = "if-addrs"))] self_ip: Option<Self::Addr>) -> io::Result<()> {
+        #[cfg(feature = "if-addrs")]
         let addresses = get_address_list()?;
+        #[cfg(not(feature = "if-addrs"))]
+        let addresses = vec![ self_ip.ok_or(io::Error::new(io::ErrorKind::Other, "no self address specified"))? ];
         if addresses.is_empty() {
             socket.join_multicast_v4(multiaddr, &Ipv4Addr::UNSPECIFIED)
         } else {
@@ -71,8 +78,11 @@ impl AddressFamily for Inet6 {
 
     const DOMAIN: Domain = Domain::IPV6;
 
-    fn join_multicast(socket: &Socket, multiaddr: &Self::Addr) -> io::Result<()> {
+    fn join_multicast(socket: &Socket, multiaddr: &Self::Addr, #[cfg(not(feature = "if-addrs"))] self_ip: Option<Self::Addr>) -> io::Result<()> {
+        #[cfg(feature = "if-addrs")]
         let addresses = get_address_list()?;
+        #[cfg(not(feature = "if-addrs"))]
+        let addresses = vec![ self_ip.ok_or(io::Error::new(io::ErrorKind::Other, "no self address specified"))? ];
         if addresses.is_empty() {
             socket.join_multicast_v6(multiaddr, 0)
         } else {
@@ -95,6 +105,7 @@ impl AddressFamily for Inet6 {
     }
 }
 
+#[cfg(feature = "if-addrs")]
 fn get_address_list() -> io::Result<Vec<(String, IpAddr)>> {
     Ok(get_if_addrs()?
         .iter()

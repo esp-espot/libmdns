@@ -1,4 +1,5 @@
 use crate::dns_parser::{self, Name, QueryClass, QueryType, RRData};
+#[cfg(feature = "if-addrs")]
 use if_addrs::get_if_addrs;
 use log::{debug, error, trace, warn};
 use socket2::Domain;
@@ -42,6 +43,8 @@ pub struct FSM<AF: AddressFamily> {
     outgoing: VecDeque<(Vec<u8>, SocketAddr)>,
     _af: PhantomData<AF>,
     allowed_ip: Vec<IpAddr>,
+
+    self_ip: Option<IpAddr>,
 }
 
 impl<AF: AddressFamily> FSM<AF> {
@@ -49,7 +52,11 @@ impl<AF: AddressFamily> FSM<AF> {
     pub fn new(
         services: &Services,
         allowed_ip: Vec<IpAddr>,
+        self_ip: Option<IpAddr>,
     ) -> io::Result<(FSM<AF>, mpsc::UnboundedSender<Command>)> {
+        #[cfg(not(feature = "if-addrs"))]
+        let std_socket = AF::bind(self_ip)?;
+        #[cfg(feature = "if-addrs")]
         let std_socket = AF::bind()?;
         let socket = UdpSocket::from_std(std_socket)?;
 
@@ -62,6 +69,7 @@ impl<AF: AddressFamily> FSM<AF> {
             outgoing: VecDeque::new(),
             _af: PhantomData,
             allowed_ip: allowed_ip,
+            self_ip: self_ip,
         };
 
         Ok((fsm, tx))
@@ -220,6 +228,7 @@ impl<AF: AddressFamily> FSM<AF> {
         builder
     }
 
+    #[cfg(feature = "if-addrs")]
     fn add_ip_rr(&self, hostname: &Name, mut builder: AnswerBuilder, ttl: u32) -> AnswerBuilder {
         let interfaces = match get_if_addrs() {
             Ok(interfaces) => interfaces,
@@ -249,6 +258,16 @@ impl<AF: AddressFamily> FSM<AF> {
                 }
                 _ => (),
             }
+        }
+
+        builder
+    }
+
+    #[cfg(not(feature = "if-addrs"))]
+    fn add_ip_rr(&self, hostname: &Name, mut builder: AnswerBuilder, ttl: u32) -> AnswerBuilder {
+        match (self.self_ip, AF::DOMAIN) {
+            (Some(ip), Domain::IPV4) => builder = builder.add_answer(hostname, QueryClass::IN, ttl, &RRData::A(ip)),
+            (Some(ip), Domain::IPV6) => builder = builder.add_answer(hostname, QueryClass::IN, ttl, &RRData::AAAA(ip))
         }
 
         builder

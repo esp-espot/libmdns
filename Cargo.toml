@@ -11,7 +11,7 @@ edition = "2018"
 
 [dependencies]
 byteorder = "1.3"
-if-addrs = "0.7"
+if-addrs = { version = "0.10", optional = true }
 hostname = "0.3"
 log = "0.4"
 multimap = "0.8"
