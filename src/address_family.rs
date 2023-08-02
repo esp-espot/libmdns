@@ -4,11 +4,7 @@ use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};
 
-#[cfg(not(windows))]
-use nix::net::if_::if_nametoindex;
-
-#[cfg(windows)]
-use win::if_nametoindex;
+use sys::if_nametoindex;
 
 pub enum Inet {}
 
@@ -107,13 +103,17 @@ fn get_address_list() -> io::Result<Vec<(String, IpAddr)>> {
         .collect())
 }
 
-#[cfg(windows)]
-mod win {
-    use std::ffi::{CString, NulError};
+mod sys {
+    use std::ffi::CString;
+    #[cfg(windows)]
     use winapi::shared::netioapi;
 
-    pub fn if_nametoindex(ifname: &str) -> Result<u32, NulError> {
-        let c_str = CString::new(ifname)?;
-        Ok(unsafe { netioapi::if_nametoindex(c_str.as_ptr()) })
+    pub fn if_nametoindex(ifname: &str) -> Option<u32> {
+        let c_str = CString::new(ifname).ok()?;
+
+        #[cfg(not(windows))]
+        return Some(unsafe { libc::if_nametoindex(c_str.as_ptr()) });
+        #[cfg(windows)]
+        return Some(unsafe { netioapi::if_nametoindex(cstr.as_ptr()) });
     }
 }
