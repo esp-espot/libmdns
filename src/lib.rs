@@ -153,8 +153,8 @@ impl Responder {
 
         let services = Arc::new(RwLock::new(ServicesInner::new(hostname)));
 
-        let v4 = FSM::<Inet>::new(&services, allowed_ips.clone());
-        let v6 = FSM::<Inet6>::new(&services, allowed_ips);
+        let v4 = FSM::<Inet>::with_self_addr(&services, allowed_ips.clone(), self_ip_v4);
+        let v6 = FSM::<Inet6>::with_self_addr(&services, allowed_ips, self_ip_v6);
 
         let (task, commands): (ResponderTask, _) = match (v4, v6) {
             (Ok((v4_task, v4_command)), Ok((v6_task, v6_command))) => {
