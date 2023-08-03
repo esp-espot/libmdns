@@ -44,15 +44,22 @@ pub struct FSM<AF: AddressFamily> {
     _af: PhantomData<AF>,
     allowed_ip: Vec<IpAddr>,
 
-    self_ip: Option<IpAddr>,
+    self_ip: Option<AF::Addr>,
 }
 
 impl<AF: AddressFamily> FSM<AF> {
-    // Will panic if called from outside the context of a runtime
     pub fn new(
         services: &Services,
+        allowed_ip: Vec<IpAddr>
+    ) -> io::Result<(FSM<AF>, mpsc::UnboundedSender<Command>)> {
+        Self::with_self_addr(services, allowed_ip, None)
+    }
+
+    // Will panic if called from outside the context of a runtime
+    pub fn with_self_addr(
+        services: &Services,
         allowed_ip: Vec<IpAddr>,
-        self_ip: Option<IpAddr>,
+        self_ip: Option<AF::Addr>,
     ) -> io::Result<(FSM<AF>, mpsc::UnboundedSender<Command>)> {
         #[cfg(not(feature = "if-addrs"))]
         let std_socket = AF::bind(self_ip)?;

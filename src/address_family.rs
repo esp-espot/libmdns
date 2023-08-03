@@ -56,11 +56,18 @@ impl AddressFamily for Inet {
         #[cfg(feature = "if-addrs")]
         let addresses = get_address_list()?;
         #[cfg(not(feature = "if-addrs"))]
-        let addresses = vec![ self_ip.ok_or(io::Error::new(io::ErrorKind::Other, "no self address specified"))? ];
+        let addresses = vec![
+            IpAddr::V4(self_ip.ok_or(io::Error::new(io::ErrorKind::Other, "no self address specified"))?)
+        ];
         if addresses.is_empty() {
             socket.join_multicast_v4(multiaddr, &Ipv4Addr::UNSPECIFIED)
         } else {
-            for (_, address) in addresses {
+            for addr in addresses {
+                #[cfg(feature = "if-addrs")]
+                let (_, address) = addr;
+                #[cfg(not(feature = "if-addrs"))]
+                let address = addr;
+
                 if let IpAddr::V4(ip) = address {
                     socket.join_multicast_v4(multiaddr, &ip)?;
                 }
@@ -82,7 +89,9 @@ impl AddressFamily for Inet6 {
         #[cfg(feature = "if-addrs")]
         let addresses = get_address_list()?;
         #[cfg(not(feature = "if-addrs"))]
-        let addresses = vec![ self_ip.ok_or(io::Error::new(io::ErrorKind::Other, "no self address specified"))? ];
+        let addresses = vec![
+            IpAddr::V6(self_ip.ok_or(io::Error::new(io::ErrorKind::Other, "no self address specified"))?)
+        ];
         if addresses.is_empty() {
             socket.join_multicast_v6(multiaddr, 0)
         } else {
@@ -91,9 +100,18 @@ impl AddressFamily for Inet6 {
             // fatal to ipv6 listening.
             // TODO: Make each interface resilient to failures on another.
             let mut registered = Vec::new();
-            for (iface_name, address) in addresses {
+            for addr in addresses {
+                #[cfg(feature = "if-addrs")]
+                let (iface_name, address) = addr;
+                #[cfg(not(feature = "if-addrs"))]
+                let address = addr;
+
                 if let IpAddr::V6(_) = address {
+                    #[cfg(feature = "if-addrs")]
                     let ipv6_index = if_nametoindex(iface_name.as_str()).unwrap_or(0);
+                    #[cfg(not(feature = "if-addrs"))]
+                    let ipv6_index = 1;
+
                     if ipv6_index != 0 && !registered.contains(&ipv6_index) {
                         socket.join_multicast_v6(multiaddr, ipv6_index)?;
                         registered.push(ipv6_index);

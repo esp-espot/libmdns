@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::future::Future;
 use std::io;
 use std::marker::Unpin;
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::sync::{Arc, RwLock};
 
 use std::thread;
@@ -37,6 +37,26 @@ pub struct Service {
     _shutdown: Arc<Shutdown>,
 }
 
+pub struct ResponderOptions {
+    pub allowed_ips: Vec<IpAddr>,
+    pub self_ip_v4: Option<Ipv4Addr>,
+    pub self_ip_v6: Option<Ipv6Addr>
+}
+
+impl ResponderOptions {
+    pub fn new() -> Self { Self {
+        allowed_ips: vec![],
+        self_ip_v4: None,
+        self_ip_v6: None
+    } }
+
+    pub fn with_allowed_ips(allowed_ips: Vec<IpAddr>) -> Self { Self {
+        allowed_ips,
+        self_ip_v4: None,
+        self_ip_v6: None
+    } }
+}
+
 type ResponderTask = Box<dyn Future<Output = ()> + Send + Unpin>;
 
 impl Responder {
@@ -44,10 +64,18 @@ impl Responder {
     pub fn new() -> io::Result<Responder> {
         Self::new_with_ip_list(Vec::new())
     }
+
+    pub fn new_with_ip_list(allowed_ips: Vec<IpAddr>) -> io::Result<Responder> {
+        Self::new_with_options(ResponderOptions::with_allowed_ips(allowed_ips))
+    }
     /// Spawn a `Responder` task on an new os thread.
     /// DNS response records will have the reported IPs limited to those passed in here.
     /// This can be particularly useful on machines with lots of networks created by tools such as docker.
-    pub fn new_with_ip_list(allowed_ips: Vec<IpAddr>) -> io::Result<Responder> {
+    pub fn new_with_options(options: ResponderOptions) -> io::Result<Responder> {
+        let allowed_ips = options.allowed_ips;
+        let self_ip_v4 = options.self_ip_v4;
+        let self_ip_v6 = options.self_ip_v6;
+
         let (tx, rx) = std::sync::mpsc::sync_channel(0);
         thread::Builder::new()
             .name("mdns-responder".to_owned())
@@ -57,7 +85,7 @@ impl Responder {
                     .build()
                     .unwrap();
                 rt.block_on(async {
-                    match Self::with_default_handle_and_ip_list(allowed_ips) {
+                    match Self::with_default_handle_extended(allowed_ips, self_ip_v4, self_ip_v6) {
                         Ok((responder, task)) => {
                             tx.send(Ok(responder)).expect("tx responder channel closed");
                             task.await;
@@ -101,11 +129,19 @@ impl Responder {
         Self::with_default_handle_and_ip_list(Vec::new())
     }
 
+    pub fn with_default_handle_and_ip_list(
+        allowed_ips: Vec<IpAddr>
+    ) -> io::Result<(Responder, ResponderTask)> {
+        Self::with_default_handle_extended(allowed_ips, None, None)
+    }
+
     /// Spawn a `Responder` on the default tokio handle.
     /// DNS response records will have the reported IPs limited to those passed in here.
     /// This can be particularly useful on machines with lots of networks created by tools such as docker.
-    pub fn with_default_handle_and_ip_list(
+    pub fn with_default_handle_extended(
         allowed_ips: Vec<IpAddr>,
+        self_ip_v4: Option<Ipv4Addr>,
+        self_ip_v6: Option<Ipv6Addr>
     ) -> io::Result<(Responder, ResponderTask)> {
         let mut hostname = hostname::get()?.into_string().map_err(|_| {
             io::Error::new(io::ErrorKind::InvalidData, "Hostname not valid unicode")
