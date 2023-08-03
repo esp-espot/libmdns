@@ -12,7 +12,7 @@ pub enum Inet {}
 pub enum Inet6 {}
 
 pub trait AddressFamily {
-    type Addr: Into<IpAddr>;
+    type Addr: Into<IpAddr> + Unpin + Clone;
 
     const ANY_ADDR: Self::Addr;
     const MDNS_GROUP: Self::Addr;

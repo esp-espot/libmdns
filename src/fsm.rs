@@ -62,7 +62,7 @@ impl<AF: AddressFamily> FSM<AF> {
         self_ip: Option<AF::Addr>,
     ) -> io::Result<(FSM<AF>, mpsc::UnboundedSender<Command>)> {
         #[cfg(not(feature = "if-addrs"))]
-        let std_socket = AF::bind(self_ip)?;
+        let std_socket = AF::bind(self_ip.clone())?;
         #[cfg(feature = "if-addrs")]
         let std_socket = AF::bind()?;
         let socket = UdpSocket::from_std(std_socket)?;
@@ -272,9 +272,12 @@ impl<AF: AddressFamily> FSM<AF> {
 
     #[cfg(not(feature = "if-addrs"))]
     fn add_ip_rr(&self, hostname: &Name, mut builder: AnswerBuilder, ttl: u32) -> AnswerBuilder {
-        match (self.self_ip, AF::DOMAIN) {
-            (Some(ip), Domain::IPV4) => builder = builder.add_answer(hostname, QueryClass::IN, ttl, &RRData::A(ip)),
-            (Some(ip), Domain::IPV6) => builder = builder.add_answer(hostname, QueryClass::IN, ttl, &RRData::AAAA(ip))
+        let self_ip = self.self_ip.clone().map(|ip| ip.into());
+
+        match (self_ip, AF::DOMAIN) {
+            (Some(IpAddr::V4(ip)), Domain::IPV4) => builder = builder.add_answer(hostname, QueryClass::IN, ttl, &RRData::A(ip)),
+            (Some(IpAddr::V6(ip)), Domain::IPV6) => builder = builder.add_answer(hostname, QueryClass::IN, ttl, &RRData::AAAA(ip)),
+            _ => {}
         }
 
         builder
